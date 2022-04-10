@@ -33,6 +33,7 @@
   (:export :entity :creature :corpse :item-stack :trap :anomaly :firearm :melee :can-move-p :step-to :activep
 	   :get-pos :get-hp :get-max-hp :get-speed :get-damage :alivep :seesp :can-shoot-p :dodges
 	   :damage-count
+	   :actor
    :corpse-owner
    :get-message-buffer :update-fov
    :get-gramma :get-name :get-concrete-name :get-full-name :get-description :get-weapon :get-damage
@@ -42,7 +43,7 @@
 	   :get-gear :equipment-slots
    :get-memory
    :msg :snd
-   :simulate-message :simulate-sound
+   :simulate-message :simulate-sound :simulate-noise
    :simple-message :simple-note
    :report)
   (:intern :melee-attack :perform-movement :pickup-items :take-damage :hit :add-stack :remove-stack :update-trap
@@ -52,14 +53,15 @@
   (:use :common-lisp :cl-user :coordinates)
   (:export  :make-map-array :+size+ :+map-rect+ :in-map-bound-p :grant-on-map :map-array
 	    :pos-gramma :pos-name :obstaclep :solidp :blockedp :litp
-	    :door :openp :open-door :close-door
-	    :search-terrain :attack-cell :destroyedp
-   :decorate-terrain :blood
+	    :door :grate-door :openp :open-door :close-door
+   :search-terrain :attack-cell :destroyedp
+   :interact
+   :decorate-terrain :blood :moss :liana
    :shadowcast
-	    :replace-light
+   :replace-light
    :create-light
    :cell-pos)
-  (:intern :terrain :floor :wall :tunnel :limit :*map*))
+  (:intern :terrain :floor :wall :tunnel :limit :trash :horizontal-railtrack :vertical-railtrack :*map*))
 
 (defpackage :level
   (:use :common-lisp :cl-user :coordinates :map)
@@ -72,7 +74,7 @@
 (defpackage :generator
   (:use :common-lisp :cl-user :coordinates :level :map)
   (:export :make-room-list :add-room :generate)
-  (:import-from :map :terrain :floor :wall :tunnel :limit :door :*map*))
+  (:import-from :map :terrain :floor :wall :tunnel :limit :door :trash :horizontal-railtrack :vertical-railtrack :*map*))
 
 (defpackage :event
   (:use :cl-user :entity :coordinates :cl)
@@ -84,7 +86,7 @@
 
 (defpackage :creature-control
   (:nicknames :ai)
-  (:export :make-movement-memory)
+  (:export :make-movement-memory :report-enemy-position)
   (:use :event :entity :coordinates :cl :cl-user))
 
 (defpackage :user-interface

@@ -27,17 +27,17 @@
 (defun process-events(&aux (event-list *next-list*))
   (psetf *next-list* nil)
   (iterate (while event-list) 
-	   (let [chosen-event (pop (if (and *next-list* (< (event-energy (car *next-list*)) (event-energy (car event-list))))
+	   (let-be [chosen-event (pop (if (and *next-list* (< (event-energy (car *next-list*)) (event-energy (car event-list))))
 				       *next-list*
 				       event-list))
-		 *zero-energy* (event-energy chosen-event)
-		 new-list (in-event-context (aif (exec chosen-event)
+		   *zero-energy* (event-energy chosen-event)
+		    new-list (in-event-context (aif (exec chosen-event)
 						 (add-before (let ((e (event-energy it)))
 							       (amutf (event-energy it) (+ e *zero-energy*)))
 							     #'< *next-list* :key #'event-energy :before-last t)
 						 *next-list*))]
 	     (setf *next-list* new-list)))
-  (setf *next-list* (when *next-list* (mapcar (let [floor (event-energy (car *next-list*))]
+  (setf *next-list* (when *next-list* (mapcar (let-be [floor (event-energy (car *next-list*))]
 						(lambda (event) (amutf (-> event energy) (- it floor))))
 					      *next-list*))))
 
@@ -163,6 +163,7 @@
 	       (simple-note creature "The door is blocked.")
 	       (progn
 		 (simple-message creature "I close a door. ")
+		 (simulate-noise creature 6)
 		 (map:close-door it)
 		 (make-turn creature 100)))
 	   (simple-note creature "The door is already closed. "))
@@ -185,11 +186,11 @@
 
 (defun bash-door!(creature dir &aux (pos (add dir (get-pos creature))) (door (map:search-terrain pos 'map:door)))
   (when (and door (not (map:openp door)))
-    (simulate-message (get-pos creature) (msg (formatted "~a bashes door." (get-name creature))))
+    (simulate-message (get-pos creature) (msg (formatted "~a bashes door." (word-capitalize (get-concrete-name creature)))))
     (attack-terrain! creature pos)
     (report pos
 	    (msg "The door is shaken violently.")
-	    (snd "I hear a door hit." 8))
+	    (snd "I hear a door knock." 8))
     (when (map:destroyedp door)
       (report pos
 	      (msg "The door crushes down!")
@@ -315,8 +316,9 @@
       (if (= fire-mode 1)
 	  (simple-message creature "I fire ~a." (get-name it))
 	  (simple-message creature "I fire a burst of ~a with my ~a." fire-mode (get-name it)))
+      (simulate-noise creature 16)
       (dotimes (i fire-mode)
-	(trace-shot (cast-ray (lambda (p) (map:obstaclep p)) (cell-line (get-pos creature) cell)) (take-shot it)))
+	(trace-shot (cast-ray (lambda (p) (and (map:solidp p) (map:obstaclep p))) (cell-line (get-pos creature) cell)) (take-shot it)))
       (make-turn creature (/ (* 100 fire-mode) (get-speed it))))))
 
 (defmethod reload-weapon!((creature actor))

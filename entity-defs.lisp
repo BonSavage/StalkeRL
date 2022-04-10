@@ -55,6 +55,17 @@
   (declare (ignore initargs))
   (setf (-> act flashlight) (map:create-light (get-pos act) 10)))
 
+;;Sounds
+
+(defmethod simulate-noise((act actor) (sound-intensity number))
+  (level:do-entities (p ents)
+    (dolist (ent ents)
+      (when (and (typep ent 'creature)
+		 (not (eq act ent))
+		 (< (perception:way-distance p (way-to act) :center (get-pos act))
+		    sound-intensity))
+	(ai:report-enemy-position (entity:get-memory ent) act)))))
+
 ;;Life & death
 
 (defmethod die((creature actor))
@@ -80,7 +91,8 @@
 
 ;;Movement
 
-(defmethod perform-movement((act actor) (delta pos))
+(defmethod perform-movement((act actor) delta)
+  (declare (ignorable delta))
   (call-next-method)
   (perception:lee (way-to act) (get-pos act) 30))
 
@@ -298,7 +310,7 @@ They are frightening to behold.")))
 ;;;----End Bloodsucker----
 
 ;;;----Start Controller----
-(define-creature controller()
+(define-creature mind-controller()
   :slots
   ((hp :initform 10)
    (max-hp :initform 10)
@@ -563,6 +575,6 @@ They are unsetting to behold.")
 ;;Other
 
 (define-prop skeleton
-    (gramma #\& (ui:layer-color :white))
+    (gramma (ui:static-gramma #\& (ui:layer-color :white)))
   (name (make-names "human skeleton" "the human skeleton" "human skeletons"))
   (description "Remains of unfortunate explorer."))

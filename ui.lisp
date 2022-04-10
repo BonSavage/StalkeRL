@@ -196,8 +196,8 @@
 	   (list sliced))))
 
 (defun str-slice(str slice-pos)
-  (let [slice-pos (if (< (length str) slice-pos) (length str) slice-pos)
-	real-pos (aif (position #\Newline str) (min (1+ it) slice-pos) slice-pos)]
+  (let-be [slice-pos (if (< (length str) slice-pos) (length str) slice-pos)
+		     real-pos (aif (position #\Newline str) (min (1+ it) slice-pos) slice-pos)]
     (values (remove #\Newline (subseq str 0 real-pos) :from-end t :count 1) (when (< real-pos (length str)) (subseq str real-pos)))))
 
 (defun gstr-lines(gstr line-length)
@@ -207,7 +207,7 @@
    (str-lines (-> gstr chars) line-length)))
 
 (defun gstr-slice(gstr slice-pos)
-  (let [(sliced rest) (str-slice (-> gstr chars) slice-pos)]
+  (let-be [(sliced rest) (str-slice (-> gstr chars) slice-pos)]
     (values (make-gui-string sliced (-> gstr color)) (when rest (make-gui-string rest (-> gstr color))))))
 
 (defun text-lines(gstr-list line-length &aux (line-length (1+ line-length)))
@@ -216,7 +216,7 @@
 	     self(nil _ res) (when res (list (reverse res)))
 	     self(gstr-list 0 res) (cons (reverse res) (self gstr-list line-length nil))
 	     self(gstr-list 1 res) (self gstr-list 0 res)
-	     self((gstr . next) [len (integer 2)] res) (let  [(sliced rest) (gstr-slice gstr (1- len))]
+	     self((gstr . next) [len (integer 2)] res) (let-be  [(sliced rest) (gstr-slice gstr (1- len))]
 							 (self (aif rest (cons it next) next)
 							       (if rest
 								   0

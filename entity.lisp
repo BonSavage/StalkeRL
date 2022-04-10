@@ -196,6 +196,10 @@
     (amutf (-> creature pos) (add it delta))
     (level:add-entity (-> creature pos) creature)))
 
+(defmethod perform-movement :after ((creature creature) (delta pos))
+  (declare (ignorable delta))
+  (map:interact creature (map:search-terrain (get-pos creature) t)))
+
 (defmethod can-move-p((creature creature) (dir pos))
   (and (null (level:get-entities (add (get-pos creature) dir) 'creature)) (not (map:obstaclep (add (get-pos creature) dir)))))
 
@@ -430,7 +434,7 @@
 ;;;Props
 
 (defmacro define-prop(name &body slots)
-  `(simple-defclass ,name (entity) ,slots))
+  `(simple-defclass ,name (entity) nil ,slots))
 
 ;;;Entity
 
@@ -490,8 +494,10 @@
 	     (or (not if-not-see) (not (seesp level:*actor* pos))))
     (ui:add-message (get-message-buffer level:*actor*) (sound-message sound))))
 
-(defun make-noise(entity sound)
-  ())
+(defgeneric simulate-noise(entity sound))
+
+(defmethod simulate-noise((entity creature) sound)
+  (simulate-sound (get-pos entity) sound))
 
 (defun report(pos visual-message sound)
   (if (and level:*actor* (seesp level:*actor* pos))

@@ -17,7 +17,7 @@
       (call-next-method)))
 
 (defmethod take-turn((creature actor))
-  (let [fov-info (update-fov creature)]
+  (let-be [fov-info (update-fov creature)]
     (panels:game-panel creature (panels:actor-controller creature fov-info) fov-info (ui:buffer-source (get-message-buffer creature)))))
 
 (defun stuck-up(zombie corpse)
@@ -54,6 +54,10 @@
 	 it))
 
 ;;Movement
+
+(defun report-enemy-position(memory enemy)
+  (psetf (movement-destination memory) enemy
+	 (movement-update-time memory) 16))
 
 (defun update-movement(creature memory)
     (if (and level:*actor* (seesp creature level:*actor*))

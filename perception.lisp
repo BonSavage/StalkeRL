@@ -17,7 +17,7 @@
 		   (plan vision-plan))
       fov
     (lambda (pos)
-      (awith (obstaclep pos)
+      (awith (or (solidp pos) (obstaclep pos))
 	(if (or (litp pos)
 		(and it (every (lambda (pos) (= (pref visible pos) 1)) (stream-car (coordinates:cell-line pos center)))))
 	    (progn

@@ -57,6 +57,9 @@
 (defun build-info()
   +build-info+)
 
+(defun jump-to(x y)
+  (psetf (-> level::*actor* entity::pos) (make-pos x y)))
+
 (defun build(&optional version-note)
   (mvb (second minute hour day month year) (get-decoded-time)
        (defconstant +build-info+ (formatted "~a~&Build date: ~a:~a:~a, ~a.~a.~a" (or version-note "") hour minute second day month year))

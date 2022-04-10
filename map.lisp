@@ -1,6 +1,6 @@
-;;;;Map without entities. Only terrain. For now.
-;;;;For the future: we can use list to contain entities on the map. This list must use terrain instead of nil to mark the end.
-;;;;Maybe it is faster to use hash table instead to contain entities.
+;;;;Map without entities. Only terrain.
+;;;;
+;;;;
 
 (in-package :map)
 
@@ -14,13 +14,15 @@
   `(array ,elem-type (,(x +size+) ,(y +size+))))
 
 ;;Terrain
-
+(defgeneric terrain-interact(terrain entity)
+  (:method  (terrain entity) (declare (ignore terrain entity)) nil))
 (defgeneric terrain-obstaclep(terrain))
 (defgeneric terrain-solidp(terrain))
 (defgeneric terrain-gramma(terrain))
 (defgeneric terrain-name(terrain))
 
-(defclass terrain() ())
+(defclass terrain()
+  ((movement-coeff :initform 1 :allocation :class :reader movement-coeff)))
 
 (defclass terrain-info(terrain)
   ((gramma :type ui:gramma :reader terrain-gramma :initarg :gramma)
@@ -35,81 +37,22 @@
 
 (defmacro define-terrain(terrain-name &key gramma obstacle solid name)
   `(eval-when (:compile-toplevel :execute :load-toplevel)
-     (setf (get ',terrain-name 'terrain ) (load-time-value (make-instance 'terrain-info :gramma ,gramma :obstaclep ,obstacle :solidp ,solid :blockingp ,obstacle :name ,name) t))))
-
-(define-terrain floor
-  :gramma (ui:static-gramma #\. (ui:color :gray))
-  :obstacle nil
-  :solid nil
-  :name "Concrete floor")
-
-(define-terrain tunnel
-  :gramma (ui:static-gramma #\, (ui:color :gray))
-  :obstacle nil
-  :solid nil
-  :name "A tunnel")
+     (progn
+       (setf (get ',terrain-name 'terrain ) (load-time-value (make-instance 'terrain-info :gramma ,gramma :obstaclep ,obstacle :solidp ,solid :blockingp ,obstacle :name ,name) t))
+       (deftype ,terrain-name()
+	 `'(eql ,(get ',terrain-name 'terrain))))))
 
 (define-terrain wall
   :gramma (ui:static-gramma #\# (ui:color :gray))
   :obstacle t
   :solid t
-  :name "Concrete wall")
-
-(define-terrain limit
-  :gramma (ui:static-gramma #\W (ui:cell-color :limit))
-  :obstacle t
-  :solid t
-  :name "Wall marked as \"Wall\"")
+  :name "concrete wall")
 
 (defmacro terrain(symbol)
-  `(load-time-value (or (get ',symbol 'terrain) (error "MAP: Undefined terrain name: ~a" symbol))))
+  `(load-time-value (or (get ',symbol 'terrain) (error "MAP: Undefined terrain name: ~a" ',symbol))))
 
 (defclass terrain-decorator(terrain)
   ((decorated :type terrain :initarg :decorated :accessor decorated)))
-
-(defclass blood(terrain-decorator) ())
-
-(defmethod terrain-gramma((terrain blood))
-  (ui:augment-gramma (terrain-gramma (decorated terrain)) :color (ui:color :crimson)))
-
-(defmethod terrain-obstaclep((dec terrain-decorator))
-  (terrain-obstaclep (decorated dec)))
-
-(defmethod terrain-solidp((dec terrain-decorator))
-  (terrain-solidp (decorated dec)))
-
-(defmethod terrain-blockingp((dec terrain-decorator))
-  (terrain-blockingp (decorated dec)))
-
-(defmethod terrain-name((dec blood))
-  (formatted "blood stained ~a" (terrain-name (decorated dec))))
-
-(defmethod hit-terrain((dec terrain-decorator) count pos)
-  (hit-terrain (decorated dec) count pos))
-
-(defgeneric hit-terrain(terrain count pos))
-
-(defclass door(terrain)
-  ((name :initform "metal door" :allocation :class :reader terrain-name)
-   (hp :type fixnum :initform 20 :accessor hp :initarg :hp)
-   (openp :type boolean :accessor openp :initarg :opened)
-   (blockingp :type boolean :reader terrain-blockingp :initform nil :allocation :class)))
-
-(defmethod terrain-gramma((terrain door))
-  (if (openp terrain)
-      (ui:static-gramma #\\ (ui:color :gray))
-      (ui:static-gramma #\+ (ui:color :gray))))
-
-(defmethod terrain-obstaclep((terrain door))
-  (not (openp terrain)))
-
-(defmethod terrain-solidp((terrain door))
-  (not (openp terrain)))
-
-(defmethod hit-terrain((door door) count pos)
-  (when (<= (decf (-> door hp) count) 0)
-    (psetf (pref *map* pos) (terrain tunnel))
-    (update-lights pos)))
 
 (defun attack-cell(pos count)
   (hit-terrain (mref pos) count pos))
@@ -125,8 +68,13 @@
 (defmethod destroyedp(door)
   (<= (-> door hp) 0))
 
+(defgeneric decorator-instance(decorator))
+
+(defmethod decorator-instance(dec)
+  dec)
+
 (defun decorate-terrain(pos decorator-name &rest args)
-  (psetf (pref *map* pos) (apply #'make-instance decorator-name :decorated (mref pos) args)))
+  (psetf (pref *map* pos) (decorator-instance (apply #'make-instance decorator-name :decorated (mref pos) args))))
 
 (defun remove-decorator(pos decorator)
   (psetf (pref *map* pos) (delete decorator (mref pos) :test #'eq)))
@@ -268,6 +216,9 @@
 (defmethod openp((cell map-cell))
   (openp (cell-terrain cell)))
 
+(defun interact(creature cell)
+  (terrain-interact (cell-terrain cell) creature))
+
 (defun map-cell(p)
   (make-map-cell :terrain (mref p) :pos p))
 
@@ -311,7 +262,7 @@
 
 
 (defun fill-circle(setter source &aux (radius (light-radius source)) (center (light-center source)) (radius2 (expt radius 2)))
-  (let [pos (make-pos 0 0)]
+  (let-be [pos (make-pos 0 0)]
     (iter
       (for i from (- radius) to radius)
       (awith (isqrt (- radius2 (expt i 2)))

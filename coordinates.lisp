@@ -72,24 +72,24 @@
        (in-first-quadrant-p (sub (size rect) (sub pos (start rect))))))
 
 (defun upper-slice(rect)
-  (make-rect (start rect) (make-pos (-> rect size x) (nhalf (-> rect size y)))))
+  (make-rect (start rect) (make-pos (-> rect size x) (round-up (half (-> rect size y))))))
 
 (defun lower-slice(rect)
-  (make-rect (make-pos (-> rect start x) (+ (-> rect start y) (nhalf (-> rect size y))))
-	     (make-pos (-> rect size x) (nhalf (-> rect size y)))))
+  (make-rect (make-pos (-> rect start x) (+ (-> rect start y) (round-up (half (-> rect size y)))))
+	     (make-pos (-> rect size x) (round-down (half (-> rect size y))))))
 
 (defun left-slice(rect)
-  (make-rect (-> rect start) (make-pos (nhalf (-> rect size x)) (-> rect size y))))
+  (make-rect (-> rect start) (make-pos (round-up (half (-> rect size x))) (-> rect size y))))
 
 (defun right-slice(rect)
-  (make-rect (make-pos (+ (-> rect start x) (nhalf (-> rect size x))) (-> rect start y))
-	     (make-pos (nhalf (-> rect size x)) (-> rect size y))))
+  (make-rect (make-pos (+ (-> rect start x) (round-up (half (-> rect size x)))) (-> rect start y))
+	     (make-pos (round-down (half (-> rect size x))) (-> rect size y))))
 
-(defun rect-scale(rect +x &optional (+y +x))
+(defun rect-scale(rect +x +y)
   (make-rect (start rect) (add (make-pos +x +y) (size rect))))
 
 (defun iter-area(rect proc)
-  (let [pos (make-pos 0 0)
+  (let-be [pos (make-pos 0 0)
 	start (start rect)
 	end (end rect)]
     (iter
@@ -103,18 +103,8 @@
 (defmacro doarea((pos rect) &body forms)
   `(iter-area ,rect (lambda (,pos) ,@forms)))
 
-(defmacro doarea*((pos rect) &body forms)
-  "Doarea of the rectangle. Simple use and fast performance."
-  (alexandria:with-gensyms (i j)
-    `(let ((,pos (make-pos 0 0)))
-       (doseries (,i (series:scan-range :from (x (start ,rect)) :upto (x (end ,rect))))
-	 (psetf (x ,pos) ,i)
-	 (doseries (,j (series:scan-range :from (y (start ,rect)) :upto (y (end ,rect))))
-	   (psetf (y ,pos) ,j)
-	   ,@forms)))))
-
 (defun iter-rectangle(rect proc)
-  (let [pos (make-pos 0 0)
+  (let-be [pos (make-pos 0 0)
 	start (start rect)
 	end (end rect)]
     (iter
@@ -130,20 +120,6 @@
 
 (defmacro dorectangle((pos rect) &body forms)
   `(iter-rectangle ,rect (lambda (,pos) ,@forms)))
-
-(defmacro dorectangle*((pos rect) &body forms)
-  `(let* ((,pos (make-pos 0 0))
-	  (ops (delay (progn ,@forms)))
-	  (start (start ,rect))
-	  (end (end ,rect)))
-     (series:iterate ((x (series:scan-range :from (x start) :upto (x end)))
-		      (y (series:scan-range :from (y start) :upto (y end))))
-		     (series:iterate ((bound-y (series:scan (vector (y start) (y end))))
-				      (bound-x (series:scan (vector (x start) (x end)))))
-	 (psetf (x ,pos) x (y ,pos) bound-y)
-	 (funcall ops)
-	 (psetf (x ,pos) bound-x (y ,pos) y)
-	 (funcall ops)))))
 
 ;;Pos sequence
 

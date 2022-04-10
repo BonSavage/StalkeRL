@@ -1,5 +1,5 @@
 ;;;;Generator
-;;;;TODO: Constants must be separated from logic
+;;;;TODO: Fix bug with doors
 
 ;;;Logic
 
@@ -12,50 +12,76 @@
 
 (defun fill-area(rect terrain)
   (coordinates:doarea (p rect)
-    (setf (pref *map* p) terrain)))
+    (setf (pref *map* p) terrain)
+    (if (rnd:bernoulli 16)
+	(case (random 3)
+	  (0 (map:decorate-terrain p  'map:moss))
+	  (1 (when (not (map:obstaclep p))(map:decorate-terrain p 'map:liana)))
+	  (2 (when (not (map:obstaclep p)) (psetf (pref *map* p)  (terrain trash))))))))
 
 (defun add-door(pos)
-  (setf (pref *map* pos) (make-instance 'door :opened (rnd:bernoulli))))
+  (setf (pref *map* pos) (make-instance (if (rnd:bernoulli) 'door 'grate-door) :opened (rnd:bernoulli))))
+
+(defun add-railtrack(rect doors)
+  (add-standard)
+  (let-be [size (size rect)
+		sx (x size)
+		sy (y size)]
+	  (if (> sx sy)
+	      (progn
+		(iter (for i from (x (start rect)) to (x (end rect)))
+		      (setf (pref *map* (make-pos i (+ (y (start rect)) (nhalf (y (size rect))))))
+			    (terrain horizontal-railtrack))))
+	      (progn
+		(iter (for j from (y (start rect)) to (y (end rect)))
+		      (setf (pref *map* (make-pos (+ (x (start rect)) (nhalf (y (size rect)))) j))
+			    (terrain vertical-railtrack)))))))
+
 
 (defun add-room(rect doors)
-  (let ((pos0 (start rect))
-	(pos1 (end rect)))
-    (fill-area rect (terrain floor))
-    (dolist (door-pos doors)
-      (aif door-pos (add-door door-pos)))
-    (when (and (>= (x (size rect)) 7) (>= (y (size rect)) 7))
-      (let ((inferior-p0  (add pos0 (make-pos (1+ (random 2)) (1+ (random 2)))))
-	    (inferior-p1  (sub pos1 (make-pos (1+ (random 2)) (1+ (random 2)))))
-	    (rnd (random 4)))
-	(format t "Generating inferior : ~a ~a~%" inferior-p0 inferior-p1)
-	(fill-area (make-rect inferior-p0  (distance-point inferior-p1 inferior-p0)) (terrain wall))
-	(generate-sector (make-rect inferior-p0 (sub inferior-p1 inferior-p0))
-			 3
-			 (make-compass-rose :north (make-door 0) :south (make-door 0) :west (make-door 0) :east (make-door 0))
-			 (make-compass-rose :north (when (= rnd 0) (make-door 3))
-					    :south (when (= rnd 1) (make-door 3))
-					    :east (when (= rnd 2) (make-door 3))
-					    :west (when (= rnd 3) (make-door 3))))))))
+  (if (or (= (x (size rect)) 39)
+	  (= (y (size rect)) 39))
+      (add-railtrack rect doors)
+      (add-standard rect doors)))
 
+(defun add-standard(rect doors)
+  (let-be [pos0 (start rect)
+		pos1 (end rect)]
+	  (fill-area rect (terrain floor))
+	  (dolist (door-pos doors)
+	    (aif door-pos (add-door door-pos)))
+	  (when (and (>= (x (size rect)) 7) (>= (y (size rect)) 7))
+	    (let ((inferior-p0  (add pos0 (make-pos (1+ (random 2)) (1+ (random 2)))))
+		  (inferior-p1  (sub pos1 (make-pos (1+ (random 2)) (1+ (random 2)))))
+		  (rnd (random 4)))
+	      (format t "Generating inferior : ~a ~a~%" inferior-p0 inferior-p1)
+	      (fill-area (make-rect inferior-p0  (distance-point inferior-p1 inferior-p0)) (terrain wall))
+	      (generate-sector (make-rect inferior-p0 (sub inferior-p1 inferior-p0))
+			       3
+			       (make-compass-rose :north (make-door 0) :south (make-door 0) :west (make-door 0) :east (make-door 0))
+			       (make-compass-rose :north (when (= rnd 0) (make-door 3))
+						  :south (when (= rnd 1) (make-door 3))
+						  :east (when (= rnd 2) (make-door 3))
+						  :west (when (= rnd 3) (make-door 3))))))))
 ;;;Keys & doors
 
 (defmacro make-vertical-keys(north south)
   `(list ,north ,south))
 (defmacro make-horizontal-keys(west east)
   `(list ,west ,east))
-(defmacro north(key)
-  `(car ,key))
-(defmacro south(key)
-  `(cadr ,key))
-(defmacro west(key)
-  `(car ,key))
-(defmacro east(key)
-  `(cadr ,key))
+(defun north(key)
+  (car key))
+(defun south(key)
+  (cadr key))
+(defun west(key)
+  (car key))
+(defun east(key)
+  (cadr key))
 
 (defun make-door(deepness)
   (if (< (random (1+ deepness)) 7)
-      (let* ((first (and (rnd:bernoulli (+ deepness 3)) (make-door (1+ deepness))))
-	     (second (if (or (rnd:bernoulli (+ deepness 3)) (not first)) (make-door (1+ deepness)))))
+      (let-be [first (when (rnd:bernoulli (+ deepness 3)) (make-door (1+ deepness)))
+	       second (when (or (rnd:bernoulli (+ deepness 3)) (not first)) (make-door (1+ deepness)))]
 	(if (rnd:bernoulli)
 	    (list first second)
 	    (list second first)))
@@ -74,8 +100,8 @@
 
 
 (defun make-tunnel(rect doors)
-  (let* ((hlength (+ (round-down (half (x (size rect)))) (if (rnd:bernoulli) 1 -1))) ;Be careful with them. They are not true halves
-	 (hheight (+ (round-down (half (y (size rect)))) (if (rnd:bernoulli) 1 -1)))
+  (let* ((hlength (+ (round-up (half (x (size rect)))) (if (rnd:bernoulli) 1 -1))) ;Be careful with them. They are not true halves
+	 (hheight (+ (round-up (half (y (size rect)))) (if (rnd:bernoulli) 1 -1)))
 	 (center (add (start rect) (make-pos hlength hheight))))
     (remove nil (list (when (rose-north doors) (make-room-data :start (make-pos (x center) (y (start rect)))
 							       :size (make-pos 1 (y (distance-point center (start rect))))
@@ -114,62 +140,6 @@
 							  :west (make-pos (1- (x inferior-start)) hheight)
 							  :east (make-pos (1+ (x inferior-end)) hheight))))))))
 
-(defun split-room(rect deepness keys &optional doors)
-  (cond ((not (any keys))
-	 (if (> (count-of doors) 1)
-	     (values
-	      (make-tunnel rect doors)
-	      (mapcar (lambda (d) (when d inftree)) doors))
-	     (format t "Start: ~d End: ~d. Room is not created. ~%"  (start rect) (add (start rect) (size rect)))))
-	((or (< (- (random 6) deepness) -2) (< (x (size rect)) 6) (< (y (size rect)) 6))
-	 (values (list (make-room rect doors))
-		 inftree))
-	(t (apply (case (random 4)
-		    (0 #'slice-north)
-		    (1 #'slice-south)
-		    (2 #'slice-west)
-		    (3 #'slice-east))
-		  (list rect deepness keys doors)))))
-
-(defmacro define-side(side counter-side side-rect counter-rect)
-  "Use macroexpand for more concrete description"
-  (labels ((make-rose(sym) (add-prefix sym "rose-"))
-	   (make-dotted(sym) (add-prefix sym ":"))
-	   (rose (primary source
-		 &key (north (list primary `(rose-north ,source))) (south (list primary `(rose-south ,source))) (west (list primary `(rose-west ,source))) (east (list primary `(rose-east ,source))))
-	     `(make-compass-rose :north ,north :south ,south :west ,west :east ,east))
-	   (final-rose
-	       (&key (north '(make-horizontal-keys west-keys east-keys)) (south '(make-horizontal-keys west-keys east-keys)) (west '(make-vertical-keys north-keys south-keys)) (east '(make-vertical-keys north-keys south-keys)))
-	     `(make-compass-rose :north ,north :south ,south :west ,west :east ,east)))
-    `(defun ,(add-prefix side "slice-")(rect deepness keys doors)
-       (symbol-macrolet ((,(add-prefix "-keys" side) side-keys)
-			 (,(add-prefix "-keys" counter-side) counter-keys))
-	 (mvb (,side side-keys)  (split-room ,side-rect (1+ deepness)
-					     ,(rose side 'keys
-						    (make-dotted side) `(,(make-rose side) keys)
-						    (make-dotted counter-side) 'nil)
-					     ,(rose side 'doors
-						    (make-dotted side) `(,(make-rose side) doors)
-						    (make-dotted counter-side) '(make-door deepness)))
-	      (mvb (,counter-side counter-keys) (split-room ,counter-rect (1+ deepness)
-							    ,(rose counter-side 'keys
-								   (make-dotted counter-side) `(,(make-rose counter-side) keys)
-								   (make-dotted side) `(,(make-rose counter-side) side-keys))
-							    ,(rose counter-side 'doors
-								   (make-dotted side) 'nil
-								   (make-dotted counter-side) `(,(make-rose counter-side) doors)))
-		   (values (append ,side ,counter-side)
-			   ,(final-rose (make-dotted side) `(,(make-rose side) side-keys)
-					(make-dotted counter-side) `(,(make-rose counter-side) counter-keys)))))))))
-
-(define-side north south (upper-slice rect) (lower-slice rect))
-(define-side south north (lower-slice rect) (upper-slice rect))
-(define-side west east (left-slice rect) (right-slice rect))
-(define-side east west (right-slice rect) (left-slice rect))
-
-
-
-
 ;;Room list
 (defun make-room-list(rect &optional (deepness 0) (keys (make-compass-rose :north (make-door 2) :south (make-door 2))) doors)
   (format t "Seed: ~a ~%" *random-state*) ;TODO: Must be room tree
@@ -178,7 +148,7 @@
 (defun fill-room(rect)
   "Naively fills room with monsters and traps"
   (let ((content (if (rnd:bernoulli)
-		     (lambda (p) (event:add-event (event:make-turn (entity:make-zombie (x p) (y p)) 100)))
+		     (lambda (p) (event:add-event (event:make-turn (if (rnd:bernoulli 4)  (entity:make-giant (x p) (y p)) (entity:make-zombie (x p) (y p))) 100)))
 		     (lambda (p) (level:add-entity p (make-instance 'entity:mosquito-bald))))))
     (dotimes (i (round (/ (random (max (x (size rect)) (y (size rect)))) 3)))
       (awith (make-pos (random (+ (x (start rect))(x (size rect)))) (random (+ (y (start rect)) (y (size rect)))))
@@ -190,15 +160,221 @@
     (dolist (item (list (entity:make-item 'entity:aksu) (entity:make-item 'entity:knife) (entity:make-item 'entity:pb) (entity:make-stack 'entity:ammo-5.45x39 90) (entity:make-stack 'entity:ammo-9x18 40)))
       (level:add-entity it item))
     (event:add-event (event:make-turn (setf level:*actor* (entity:make-actor (x it) (y it))) 0))))
+
 ;;Generator
 
 (defun generate(rect)
   (awith (make-room-list rect)
-	 (dolist (room it)
-	   (apply #'generator:add-room room))
-	 (add-actor (car (first it)))
-	 (dolist (room (cdr it))
-	   (fill-room (car room)))
-	 (dorectangle (pos +map-rect+)
-		      (setf (pref *map* pos) (terrain limit)))
-	 it))
+    (dolist (room it)
+      (apply #'generator:add-room room))
+    (add-actor (car (first it)))
+    (dolist (room (cdr it))
+      (fill-room (car room)))
+    (dorectangle (pos +map-rect+)
+      (setf (pref *map* pos) (terrain limit)))
+    it))
+
+;;;Experimental
+
+;;Sector
+(defstruct (sector-tree (:conc-name tree-)) ;This is where ML is better
+  (type 'vertical :type (member vertical horizontal))
+  (first-branch nil :type (or sector-tree t null))
+  (second-branch nil :type (or sector-tree t null)))
+
+(defun print-tree(tree deepness stream)
+  (dotimes (i deepness)
+    (format stream "-"))
+  (if (typep tree 'sector-tree)
+      (progn
+	(format stream "~a" (tree-type tree))
+	(format stream "~&")
+	(print-tree (tree-first-branch tree) (1+ deepness) stream)
+	(format stream "~&")
+	(print-tree (tree-second-branch tree) (1+ deepness) stream))
+      (format stream " ~a" tree)))
+
+(defmethod print-object((object sector-tree) stream)
+  (print-tree object 0 stream))
+
+(defun vertical-sectorp(sector)
+  (eq (tree-type sector) 'vertical))
+
+(defun horizontal-sectorp(sector)
+  (eq (tree-type sector) 'horizontal))
+
+(deftype vertical-sector()
+  '(and sector-tree (satisfies vertical-sectorp)))
+
+(deftype horizontal-sector()
+  '(and sector-tree (satisfies horizontal-sectorp)))
+
+(defun split-vertical(rect deepness)
+  (let-be [left (left-slice rect)
+	   right (right-slice rect)]
+    (make-sector-tree :type 'vertical
+		      :first-branch (split-area left (1+ deepness) 'vertical)
+		      :second-branch (split-area right (1+ deepness) 'vertical))))
+
+(defun split-horizontal(rect deepness)
+  (let-be [upper (upper-slice rect)
+	   lower (lower-slice rect)]
+    (make-sector-tree :type 'horizontal
+		      :first-branch (split-area upper (1+ deepness) 'horizontal)
+		      :second-branch (split-area lower (1+ deepness) 'horizontal))))
+
+(defun split-area(rect deepness previous)
+  (if (or (< (- (random 5) deepness) -2) (< (x (size rect)) 6) (< (y (size rect)) 6))
+      rect
+      (awith (random 1.0)
+	(if (< it (if (eq previous 'vertical) .35 .65))
+	    (split-vertical rect deepness)
+	    (split-horizontal rect deepness)))))
+
+;;Keys and doors
+(defstruct links
+  (keys nil :type compass-rose)
+  (doors nil :type compass-rose))
+
+(defstruct (linked-sector (:conc-name sector-))
+  (area nil :type rect)
+  (keys nil :type compass-rose)
+  (doors nil :type compass-rose))
+
+(localf shift (rose &key ;... and this is where Lisp is better than ML
+		    (north #'identity)
+		    (south #'identity)
+		    (west #'identity)
+		    (east #'identity))
+    (make-compass-rose :north (funcall north (rose-north rose))
+		       :south (funcall south (rose-south rose))
+		       :west (funcall west (rose-west rose))
+		       :east (funcall east (rose-east rose)))
+  (defun rose-shift(rose side-symbol counter-side-value &aux (delayed (lambda (&rest args) counter-side-value)))
+    (ecase side-symbol
+      (:north (shift rose :west #'north :east #'north :south delayed))
+      (:south (shift rose :west #'south :east #'south :north delayed))
+      (:west (shift rose :south #'west :north #'west :east delayed))
+      (:east (shift rose :south #'east :north #'east :west delayed)))))
+
+(defun internal-keys(deepness &key first-side second-side)
+  (let-be [internal-link (if (or (and (car first-side) (cadr first-side))
+				 (and (car second-side) (cadr second-side)))
+			     nil
+			     t)
+	   first-link (when internal-link (rnd:bernoulli 2))
+	   second-link (when internal-link (not first-link))
+	   first-key (when first-link (make-door deepness))
+	   second-key (when second-link (make-door deepness))]
+	  (values first-key second-key)))
+
+(defun link-horizontal(tree deepness keys doors)
+  (let-be [north (tree-first-branch tree)
+	   south (tree-second-branch tree)
+	   (north->south south->north) (internal-keys deepness :first-side (rose-west keys) :second-side (rose-east keys))]
+    (if north->south
+	      (let-be [(new-north north-doors) (link-sectors north
+					      (1+ deepness)
+					      (rose-shift keys :north nil)
+					      (rose-shift doors :north north->south))
+		    (new-south south-doors) (link-sectors south
+					      (1+ deepness)
+					      (rose-shift keys :south (rose-south north-doors))
+					      (rose-shift doors :south nil))]
+		(values
+		 (make-sector-tree :type 'horizontal
+				   :first-branch new-north
+				   :second-branch new-south)
+		 (make-compass-rose :north (rose-north north-doors)
+				    :west (rose-west doors)
+				    :east (rose-east doors)
+				    :south (rose-south south-doors))))
+	      ;;else: south->north or nothing
+	      (let-be [(new-south south-doors) (link-sectors south
+					      (1+ deepness)
+					      (rose-shift keys :south nil)
+					      (rose-shift doors :south south->north))
+		    (new-north north-doors) (link-sectors north
+					      (1+ deepness)
+					      (rose-shift keys :north (rose-north south-doors))
+					      (rose-shift doors :north nil))]
+		(values
+		 (make-sector-tree :type 'horizontal
+				   :first-branch new-north
+				   :second-branch new-south)
+		 (make-compass-rose :north (rose-north north-doors)
+				    :west (rose-west doors)
+				    :east (rose-east doors)
+				    :south (rose-south south-doors)))))))
+
+(defun link-vertical(tree deepness keys doors)
+  (let-be [west (tree-first-branch tree)
+	   east (tree-second-branch tree)
+	   (west->east east->west) (internal-keys deepness :first-side (rose-north keys) :second-side (rose-south keys))]
+    (if west->east
+	(let-be [(new-west west-doors) (link-sectors west
+						     (1+ deepness)
+						     (rose-shift keys :west nil)
+						     (rose-shift doors :west west->east))
+		 (new-east east-doors) (link-sectors east
+						     (1+ deepness)
+						     (rose-shift keys :east (rose-east west-doors))
+						     (rose-shift doors :east nil))]
+	  (values
+	   (make-sector-tree :type 'vertical
+			     :first-branch new-west
+			     :second-branch new-east)
+	   (make-compass-rose :north (rose-north doors)
+			      :west (rose-west west-doors)
+			      :east (rose-east east-doors)
+			      :south (rose-south doors))))
+	;;else: east->west or nothing
+	(let-be [(new-east east-doors) (link-sectors east
+						     (1+ deepness)
+						     (rose-shift keys :east nil)
+						     (rose-shift doors :east east->west))
+		 (new-west west-doors) (link-sectors west
+						     (1+ deepness)
+						     (rose-shift keys :west (rose-west east-doors))
+						     (rose-shift doors :west nil))]
+	  (values
+	   (make-sector-tree :type 'vertical
+			     :first-branch new-west
+			     :second-branch new-east)
+	   (make-compass-rose :north (rose-north doors)
+			      :west (rose-west west-doors)
+			      :east (rose-east east-doors)
+			      :south (rose-south doors)))))))
+
+(defun link-sectors(sector deepness keys doors)
+  (if (and (not (any doors)) (not (any keys)))
+      (format t "Removed ~a ~&" sector)
+      (etypecase sector
+	(rect (values
+	       (make-linked-sector :area sector
+				   :keys keys
+				   :doors doors)
+	       doors))
+	(vertical-sector (link-vertical sector deepness keys doors))
+	(horizontal-sector (link-horizontal sector deepness keys doors)))))
+
+;;Rooms
+
+(defun build-area(linked-sector)
+  (when (or (> (count-of (sector-doors linked-sector)) 1) (any (sector-keys linked-sector)))
+    (cond ((not (any (sector-keys linked-sector)))
+	   (make-tunnel (sector-area linked-sector) (sector-doors linked-sector)))
+	  (t (list (make-room (sector-area linked-sector) (sector-doors linked-sector)))))))
+
+(defun build-sector(sector)
+  (etypecase sector
+    (sector-tree (append (build-sector (tree-first-branch sector)) (build-sector (tree-second-branch sector))))
+    (linked-sector (build-area sector))
+    (null nil)))
+
+;;Split
+(defun split-room(rect deepness keys doors)
+  (build-sector (link-sectors (split-area rect deepness 'horizontal)
+			      deepness
+			      keys
+			      doors)))

@@ -228,7 +228,7 @@
 
 (defmethod view-page((view buffer-view))
   (progn
-    (let [handler (-> view handler)
+    (let-be [handler (-> view handler)
 	  dependent (-> handler dependent)]
       (reset-dependent handler (modf (-> dependent sequence)
 				     (get-page (funcall (-> view gstr-content) (-> dependent size)))))
