@@ -19,6 +19,18 @@
   :solid t
   :name "wall marked as \"Wall\"")
 
+(define-terrain pillar
+  :gramma (ui:static-gramma (code-char 20) (ui:color :gray))
+  :obstacle t
+  :solid t
+  :name "pillar")
+
+(define-terrain broken-pillar
+  :gramma (ui:static-gramma (code-char 30) (ui:color :gray))
+  :obstacle t
+  :solid t
+  :name "broken pillar")
+
 (define-terrain vertical-railtrack
   :gramma (ui:static-gramma (code-char 186) (ui:color :gray))
   :obstacle nil
@@ -32,7 +44,7 @@
   :name "railtrack")
 
 (define-terrain heavy-gate
-  :gramma (ui:static-gramma (code-char 219) (ui:color :silver))
+  :gramma (ui:static-gramma (code-char 219) (ui:color :gray))
   :obstacle t
   :solid t
   :name "heavy metal gate")
@@ -47,6 +59,8 @@
 
 (defclass blood(terrain-decorator) ())
 
+(defclass plant-blood(blood) ())
+
 (defclass moss(terrain-decorator) ())
 
 (defclass liana(terrain-decorator)
@@ -59,6 +73,9 @@
 
 (defmethod terrain-gramma((terrain blood))
   (ui:augment-gramma (terrain-gramma (decorated terrain)) :color (ui:color :crimson)))
+
+(defmethod terrain-gramma((terrain plant-blood))
+  (ui:augment-gramma (terrain-gramma (decorated terrain)) :color (ui:color :olivine)))
 
 (defmethod terrain-obstaclep((dec terrain-decorator))
   (terrain-obstaclep (decorated dec)))
@@ -75,10 +92,10 @@
 (defmethod terrain-name((dec moss))
   (formatted "moss grown ~a" (terrain-name (decorated dec))))
 
+(defgeneric hit-terrain(terrain count pos))
+
 (defmethod hit-terrain((dec terrain-decorator) count pos)
   (hit-terrain (decorated dec) count pos))
-
-(defgeneric hit-terrain(terrain count pos))
 
 (defclass door(terrain)
   ((name :initform "metal door" :allocation :class :reader terrain-name)
@@ -123,4 +140,4 @@
   (entity:simulate-noise creature 8))
 
 (defmethod terrain-interact((junk (eql (terrain trash))) creature)
-  (entity:simulate-sound (entity:get-pos creature) (entity:snd "I hear a metal noise." 8)))
+  (entity:simulate-sound (entity:get-pos creature) (entity:snd "I hear a metal noise." 8) :if-not-see t))

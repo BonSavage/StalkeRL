@@ -27,16 +27,16 @@
 (defun process-events(&aux (event-list *next-list*))
   (psetf *next-list* nil)
   (iterate (while event-list) 
-	   (let-be [chosen-event (pop (if (and *next-list* (< (event-energy (car *next-list*)) (event-energy (car event-list))))
-				       *next-list*
-				       event-list))
-		   *zero-energy* (event-energy chosen-event)
-		    new-list (in-event-context (aif (exec chosen-event)
-						 (add-before (let ((e (event-energy it)))
-							       (amutf (event-energy it) (+ e *zero-energy*)))
-							     #'< *next-list* :key #'event-energy :before-last t)
-						 *next-list*))]
-	     (setf *next-list* new-list)))
+    (let-be [chosen-event (pop (if (and *next-list* (< (event-energy (car *next-list*)) (event-energy (car event-list))))
+				   *next-list*
+				   event-list))
+	     *zero-energy* (event-energy chosen-event)
+	     new-list (aif (in-event-context (exec chosen-event))
+			   (add-before (let ((e (event-energy it)))
+					 (amutf (event-energy it) (+ e *zero-energy*)))
+				       #'< *next-list* :key #'event-energy :before-last t)
+			   *next-list*)]
+      (setf *next-list* new-list)))
   (setf *next-list* (when *next-list* (mapcar (let-be [floor (event-energy (car *next-list*))]
 						(lambda (event) (amutf (-> event energy) (- it floor))))
 					      *next-list*))))
@@ -56,7 +56,7 @@
 (defclass thunk-event(event)
   ((thunk :type (function () t) :initarg :thunk)))
 
-(defclass ai-update(turn)
+(defclass action(turn)
   ())
 
 (defmethod make-update((entity entity) pos eu)
@@ -69,8 +69,8 @@
 (defun make-thunk-event(thunk eu)
   (make-instance 'thunk-event :thunk thunk :energy eu))
 
-(defmethod exec((turn turn))
-  (take-turn (entity turn)))
+(defmethod exec((ev turn))
+  (creature-control:state-execute (entity:get-state (entity ev)) ev))
 
 (defmethod exec((turn map-entity-turn))
   (update-entity (entity turn) (get-pos turn)))
@@ -87,10 +87,6 @@
 (defgeneric reload-weapon!(entity))
 (defgeneric perform-shot!(entity cell &optional fire-mode))
 ;;;Start
-
-(defmethod take-turn :around ((creature creature))
-  (when (alivep creature)
-    (call-next-method)))
 
 (defmethod update-entity((entity trap) pos)
   (progn
@@ -139,11 +135,11 @@
 	   (simple-message creature "I drop ~a. " (get-name stack))
 	   (event:make-turn creature 100))))
 
-(defmethod use-slot!(creature slot)
+(defun use-slot!(creature slot)
   (progn
-    (when (if (slot-stack slot)
-	      (put-off-slot creature (slot-category slot))
-	      (slot-equip creature (slot-category slot)))
+    (when (if (slot-value (get-gear creature) slot)
+	      (put-off-slot creature slot)
+	      (slot-equip creature slot))
       (make-turn creature 100))))
 
 (defmethod switch-weapon!((creature actor))
@@ -200,7 +196,7 @@
 (defmethod interact-with-cell!(creature dir)
   (aif (try-to-move! creature dir)
        it
-       (bash-door! creature dir)))
+       (or (bash-door! creature dir) (make-turn creature 100))))
 
 ;;;Attack
 
@@ -253,8 +249,27 @@
 	(perform-movement creature dir)
 	(make-turn creature (if (or (zerop (x dir)) (zerop (y dir))) 100 141)))))
 
+(defun update-detector(actor pos)
+  (let-be [detector (find-accessory actor 'detector)]
+    (when detector
+      (dolist (ent (remove-if (of-type '(not entity:abnormal)) (level:get-entities pos)))
+	(entity:try-to-detect actor detector ent (distance (get-pos actor) pos))))))
+    
+
+(defun scan-traps!(actor)
+  (level:do-entities (pos entities (make-turn actor 100))
+    (update-detector actor pos)
+    (if (seesp actor pos)
+	(dolist (trap (remove-if (alexandria:rcurry #'typep
+						    '(not trap))
+				 entities))
+	  (memory:scout-trap actor trap pos)))))
+	  
+
 (defmethod try-to-move!((act actor) (dir pos))
-  (or (call-next-method) (simple-message act "The way is blocked.")))
+  (if (= (x dir) (y dir) 0)
+      (scan-traps! act)
+      (or (call-next-method) (simple-message act "The way is blocked."))))
 
 (defun move-random!(creature &optional (tries 8))
   (or (try-to-move! creature (make-pos (1- (random 3)) (1- (random 3))))
@@ -316,9 +331,11 @@
       (if (= fire-mode 1)
 	  (simple-message creature "I fire ~a." (get-name it))
 	  (simple-message creature "I fire a burst of ~a with my ~a." fire-mode (get-name it)))
-      (simulate-noise creature 16)
+      (simulate-noise creature (get-loudness it))
       (dotimes (i fire-mode)
-	(trace-shot (cast-ray (lambda (p) (and (map:solidp p) (map:obstaclep p))) (cell-line (get-pos creature) cell)) (take-shot it)))
+	(let-be [shot (take-shot it)]
+	  (when shot
+	    (trace-shot (cast-ray (lambda (p) (and (map:solidp p) (map:obstaclep p))) (cell-line (get-pos creature) cell)) shot))))
       (make-turn creature (/ (* 100 fire-mode) (get-speed it))))))
 
 (defmethod reload-weapon!((creature actor))

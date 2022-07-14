@@ -25,5 +25,8 @@
 (defun bernoulli(&optional (range 2))
   (zerop (random range)))
 
+(defun interval(min max)
+  (+ min (random (- max min))))
+
 (defun fbernoulli(range)
   (<= (random 1.0) range))

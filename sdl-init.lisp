@@ -3,6 +3,6 @@
 
 (unless *loaded*
   (setf *loaded* t)
-  (load-foreign-library "rl_sdl.dll")
+  (load-foreign-library "RL_SDL.dll")
   (defcfun ("initialize") :void)
   (initialize))

@@ -27,6 +27,9 @@
 (defmacro define-view(name elem-view view-selected)
   `(defparameter ,name (make-elem-view :elem-view ,elem-view :view-selected ,view-selected)))
 
+(defun elem-view(elem-view view-selected)
+  (make-elem-view :elem-view elem-view :view-selected view-selected))
+
 ;;Low-level
 
 
@@ -83,7 +86,12 @@
 (defun catalogue(gui-strings)
   (lambda (size)
     (awith (catalogue-lines gui-strings (x size))
-	   (delayed-page it))))
+      (delayed-page it))))
+
+(defun plain(gui-strings)
+  (lambda (size)
+    (declare (ignore size))
+    (delayed-page (list gui-strings))))
 
 
 ;;Other
@@ -184,6 +192,9 @@
 
 (defclass alphabetic-menu(menu) ())
 
+(defclass complex-menu(menu)
+  ((sections :initarg :sections)))
+
 (defclass buffer-view(scrollable-view)())
 
 ;;Protocols:
@@ -240,7 +251,44 @@
 (defmethod view-page((view alphabetic-menu))
   (alphabetic-page (-> view handler dependent) :convert (-> view elem-view view-selected)))
 
+(defmethod view-page((view complex-menu))
+  (complex-page (-> view handler dependent) :sections (-> view sections) :convert (-> view elem-view view-selected)))
+
+(defun extract-sections(sequence)
+  (iter
+    (with pos = 0)
+    (for sect in sequence)
+    (collect (make-menu-section :name (section-heading sect)
+				:pos pos)
+	     into res)
+    (incf pos (section-length sect))
+    (finally (return res))))
+
+(defun extract-sections(sequence)
+  (pm/amatch (0 sequence nil)
+	     self(_ nil res) (reverse res)
+	     self(pos (hd . tl) res) (self (+ 0 (section-length hd))
+					   tl
+					 (cons (make-menu-section
+						:name (section-heading hd)
+						:pos pos)
+					       res))))
+
+(defun extract-content(sequence)
+  (mappend #'section-content sequence))
+
 ;;DSL interface
+
+(defstruct (section (:constructor section (heading content)))
+  (heading nil :type gui-string)
+  (content nil :type list))
+
+(defstruct label
+  (alpha)
+  (content))
+
+(defun section-length(sect)
+  (1+ (length (section-content sect))))
 
 (defun scrollable(gstr-content &optional (closure #'control-scrollable))
   (make-instance 'scrollable-view :handler (handler closure) :gstr-content gstr-content))
@@ -268,6 +316,14 @@
 		 :elem-view view
 		 :content sequence))
 
+(defun complex-menu(sequence view &key  (action (lambda (index content) (elt content index))))
+  (awith (extract-content sequence)
+    (make-instance 'complex-menu
+		   :handler (handler (make-menu-controller (alexandria:rcurry action it)))
+		   :elem-view view
+		   :sections (extract-sections sequence)
+		   :content it)))
+
 (defun buffer(source)
   (let ((handler (handler #'control-buffer)))
     (make-instance 'buffer-view
@@ -283,7 +339,6 @@
 		   (#\Return (scroll-pages subscribed 1))
 		   (#\Backspace (scroll-pages subscribed -1))))
 
-
 (defun control-buffer(dependent)
   (if (last-page-p dependent)
       'exit
@@ -294,6 +349,7 @@
     (handle-input
      (down (scroll-lines subscribed 1))
      (up (scroll-lines subscribed -1))
+     (#\Escape 'exit)
      (#\Return (funcall action (-> subscribed index))))))
 
 (defun call-handler(model)
@@ -301,23 +357,32 @@
 
 (defmacro handle(model)
   `(awith (call-handler ,model)
-     (cond ((eq it 'exit) (return nil))
-	   ((null it) nil)
-	   (t (return it)))))
+	  (cond ((eq it 'exit) (return nil))
+		((null it) nil)
+		(t (return it)))))
 
 (defun make-alphabetic-controller(action)
   (lambda (dependent)
     (awith (api:get-key-event)
-      (if (and (>= it 4) (<= it 29)) ;a - z
-	  (awith (- it 4)
-	    (if (= it (-> dependent index))
-		(funcall action (-> dependent index))
-		(psetf (-> dependent index) (grant-bounds (+ it (page-index dependent)) 0 (1- (length (-> dependent sequence)))))))
-	  (controller-body it
-			   (down (scroll-lines dependent 1))
-			   (up (scroll-lines dependent -1))
-			   (#\Return (funcall action (-> dependent index)))
-			   (#\Escape 'exit))))))
+	   (if (and (>= it 4) (<= it 29)) ;a - z
+	       (awith (- it 4)
+		      (if (= it (-> dependent index))
+			  (funcall action (-> dependent index))
+			  (psetf (-> dependent index) (grant-bounds (+ it (page-index dependent)) 0 (1- (length (-> dependent sequence)))))))
+	       (controller-body it
+				(down (scroll-lines dependent 1))
+				(up (scroll-lines dependent -1))
+				(#\Return (funcall action (-> dependent index)))
+				(#\Escape 'exit))))))
+
+(defun make-complex-controller(action subcontroller)
+  (lambda (subscribed)
+    (awith (api:get-key-event)
+      (controller-body it
+	(down (scroll-lines subscribed 1))
+	(up (scroll-lines subscribed -1))
+	(#\Return (funcall action (-> subscribed index)))
+	(t (funcall subcontroller subscribed content))))))
 
 ;;;Refactoring needed
 
@@ -339,14 +404,15 @@
 	      (-> target-fov focus))))
 
 (defmethod make-lookup-fov((fov perception:fov-info) &optional (focus (make-pos 0 0)))
-  (make-instance 'lookup-fov :visible-entities (perception:fov-entity-positions fov)
+  (make-instance 'lookup-fov :entity-positions (perception:fov-entity-positions fov)
 			     :center (perception:get-center fov)
 			     :focus focus
-			     :fov (perception:get-fov fov)))
+			     :fov (perception:get-fov fov)
+			     :marks (perception:fov-marks fov)))
 
 (defmethod update-instance-for-different-class :after ((old lookup-fov) (new target-fov) &key actor)
   (psetf (-> new targets) (apply #'circular-list
-				 (sort (mapcar #'entity:get-pos (remove actor (perception:visible-creatures old)))
+				 (sort (mapcar #'entity:get-pos (remove actor (remove-if (alexandria:rcurry #'typep '(not entity:creature))(perception:visible-entities old))))
 				       (lambda (p1 p2)(< (distance p1 (perception:get-center old)) (distance p2 (perception:get-center old)))))))
   (next-target new))
 
@@ -364,9 +430,15 @@
 (defmethod draw-map((fov-info perception:fov-info) draw-start draw-end center)
   (declare (special map-rect fov-center) (ignore draw-end draw-start) (optimize (speed 3))) ;TODO: Must be optimized. Must use a foreign object
   (draw-terrain fov-info center)
-  (dolist (pos (perception:fov-entity-positions fov-info))
+  (iter
+    (for (pos . entities) in (perception:fov-entity-positions fov-info))
+    (let-be [gramma (level:get-entities-gramma entities)]
+      (when (and gramma (in-bound-p pos map-rect))
+	(draw-gramma gramma (add center (sub pos fov-center))))))
+  (iter
+    (for (pos . mark) in (perception:fov-marks fov-info))
     (when (in-bound-p pos map-rect)
-      (draw-gramma (level:get-gramma fov-info pos) (add center (sub pos fov-center))))))
+      (draw-gramma (perception:mark-gramma mark) (add center (sub pos fov-center))))))
 
 (defmethod draw-map :around ((fov-info perception:fov-info) draw-start draw-end center)
   (let* ((start-offset (sub draw-start center))

@@ -43,6 +43,10 @@
   (start (make-pos 0 0) :type pos)
   (size (make-pos 0 0) :type pos))
 
+
+(defun rect-center(rect)
+  (add (start rect) (make-pos (round-down (half (x (size rect))))
+			      (round-down (half (y (size rect)))))))
 (defun start(rect)
   (rect-start rect))
 

@@ -14,6 +14,9 @@
   (assert (and (symbol-function function-name)))
   (setf (symbol-function function-name) (awith (symbol-function function-name) (lambda (&rest args) (format t "Profiling: ~a" function-name) (time (apply it args))))))
 
+(defun restart-game()
+  ())
+
 (defmacro render-test()
   `(panels::game-panel (panels::actor-controller level:*actor*) (entity::do-fov level:*actor*) (entity:get-message-buffer level:*actor*)))
 

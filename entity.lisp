@@ -8,12 +8,12 @@
 ;;Macros
 
 (defun build-class-property(form)
-  (destructuring-bind (name initform) form
-    `(,name :initform ,initform :allocation :class)))
+  (destructuring-bind (name initform &rest other) form
+    `(,name :initform ,initform :allocation :class ,@other)))
 
 (defun build-instance-property(form)
-  (destructuring-bind (name initform) form
-    `(,name :initform ,initform)))
+  (destructuring-bind (name initform &rest other) form
+    `(,name :initform ,initform ,@other)))
 
 (defmacro simple-defclass(name supers (&body instance-properties)
 					 (&body class-properties))
@@ -36,11 +36,12 @@
 (defgeneric get-speed(creature))
 (defgeneric get-dodge-coeff(creature))
 (defgeneric get-memory(creature))
+(defgeneric get-protection(creature))
 ;;Primitive mutators (used by event commands)
 (defgeneric perform-movement(creature delta))
 (defgeneric die(creature)) 
 (defgeneric take-damage(creature damage-info)) ;TODO: Must be generic for any entity
-(defgeneric take-damage-count(creature count))
+(defgeneric decrease-health(creature count))
 (defgeneric hit(source victim))
 ;;Event commands
 (defgeneric melee-attack!(attacker attackee))
@@ -87,38 +88,7 @@
 	 (level:add-entity pos ins)
 	 ins))))
 
-(defstruct (actor-inventory (:conc-name make-actor-inventory (&optional (backpack nil))))
-  (backpack nil :type list)
-  (accessories nil :type list))
 
-(defun add-stack(inventory item-stack)
-  (unless (zerop (-> item-stack count))
-    (aif (find-if (lambda (istack) (and istack (same-item-p (-> item-stack item) (-> istack item)))) (-> inventory backpack))
-	 (merge-stacks it item-stack)
-	 (push item-stack (-> inventory backpack)))))
-
-(defun remove-stack(inventory item-stack)
-  (amutf (-> inventory backpack) (delete item-stack it :count 1 :test #'eq)))
-
-(defun take-stack(inventory stack &key (test #'same-item-p))
-  "Takes stack by non strict pattern"
-  (aif (find (stack-item stack) (get-backpack inventory) :key #'stack-item :test test)
-       (relation-case ((-> stack count) (-> it count))
-		      (< (progn
-			   (decf (-> it count) (-> stack count))
-			   stack))
-		      (= (progn
-			   (remove-stack inventory it)
-			   stack))
-		      (> (progn
-			   (remove-stack inventory it)
-			   it)))))
-
-(defun get-backpack(inventory &optional items-type)
-  (awith (-> inventory backpack)
-    (if items-type
-	(remove-if (complement (lambda (stack) (subtypep (stack-item stack) items-type))) it)
-	it)))
 
 (defun equipment-slots(gear)
   (list
@@ -157,7 +127,21 @@
    (hp :accessor get-hp :initarg :hp)
    (max-hp :accessor get-max-hp :initarg max-hp)
    (speed :accessor get-speed :initarg :speed)
-   (dodge-coeff :accessor get-dodge-coeff :initarg :dodge-coeff)))
+   (dodge-coeff :accessor get-dodge-coeff :initarg :dodge-coeff)
+   (protection :reader get-protection
+	       :initform (make-protection) :allocation :class)
+   (hear-addition :initform 0 :allocation :class :reader get-hear-addition)
+   (shock-value :initform 0 :type fixnum :reader get-shock-value)
+   (blood-symbol :initform 'map:blood :allocation :class :reader blood-symbol)
+   (state :initform (creature-control:make-state 'creature-control::standard-state) :type state :initarg :state :reader get-state)
+   (effects :initform nil :type list :accessor get-effects)))
+
+(defun set-state(creature state)
+  (setf (-> creature state) state)
+  (creature-control:init-state state creature))
+
+(defmethod has-effect(creature effect)
+  (find-if (of-type effect) (get-effects creature)))
 
 (defclass flying(creature) ())
 
@@ -183,10 +167,12 @@
 (defmethod die((creature creature))
   (report-death creature)
   (level:remove-entity (get-pos creature) creature)
+  (set-state creature (creature-control:make-state 'creature-control:dead))
   (spawn-corpse creature))
 
 (defmethod alivep(creature)
-  (> (-> creature hp) 0))
+  (and (not (typep (get-state creature) 'creature-control:dead))
+       (> (-> creature hp) 0)))
 
 ;;Movement
 
@@ -208,25 +194,32 @@
 
 ;;Damage & combat
 
+(defmethod get-protection-type(entity damage-type)
+  (slot-value (get-protection entity) damage-type))
+
 (defmethod dodges(victim damage-info)
   (<= (rnd:throw-dices (-> damage-info hit-check)) (rnd:throw-dices (get-dodge-coeff victim))))
 
 (defmethod take-damage(attackee damage-info)
-  (take-damage-count attackee (rnd:throw-dices (-> damage-info damage))))
+  (decrease-health attackee (- (rnd:throw-dices (-> damage-info damage)) (get-protection-type attackee (-> damage-info type)))))
 
 (defmethod take-damage :after(attackee damage-info)
   (awith (damage-info-type damage-info)
     (when (member it '(mechanic firearm))
-      (map:decorate-terrain (get-pos attackee) 'map:blood))))
+      (map:decorate-terrain (get-pos attackee) (blood-symbol attackee)))))
 
-(defmethod take-damage-count(attackee count)
-  (decf (-> attackee hp) count))
+(defmethod decrease-health(attackee count)
+  (when (> count 0)
+    (decf (-> attackee hp) count)))
 
-(defmethod take-damage-count :after(attackee count)
-  (unless (alivep attackee)
+(defmethod decrease-health :after(attackee count)
+  (when (not (alivep attackee))
     (die attackee)))
 
 ;;Perception
+
+(defmethod seesp(caller (_ null))
+  nil)
 
 (defmethod seesp(caller (creature creature))
   "Standard LOS-based algorithm"
@@ -285,7 +278,8 @@
 (defclass firearm(weapon)
   ((reload-time :initform 100 :reader get-reload-time :allocation :class)
    (ammo-count :initform 0 :initarg :ammo)
-   (fire-modes :initform (circular-list 1) :type circular-list :allocation :class :reader get-fire-modes)))
+   (fire-modes :initform (circular-list 1) :type circular-list :allocation :class :reader get-fire-modes)
+   (loudness :initform 10 :allocation :class :reader get-loudness)))
 
 (defmethod get-description((item firearm))
   (formatted "~a~&Damage: ~a~&Ammunition: ~a" (call-next-method) (rnd:dices-string (-> (get-ranged-damage item) damage)) (-> item ammo-type)))
@@ -326,7 +320,8 @@
 
 ;;Armor
 
-(defclass armor(item) ())
+(defclass armor(item)
+  ((protection :reader get-protection :allocation :class)))
 
 (defmacro define-armor(name &body class-properties)
   `(progn
@@ -347,6 +342,16 @@
 ;;Final
 (defclass item(entity)
   ((condition :initform 1 :type real :initarg :condition)))
+
+(defmacro define-item(name &rest properties)
+  (let-be [pivot (position :instance-propeties properties)
+	   class-properties (subseq properties 0 pivot)
+	   instance-properties (when pivot (subseq properties (1+ pivot)))]
+	  `(progn
+	     (simple-defclass ,name (item)
+			      ,instance-properties
+			      ,class-properties)
+	     (export ',name))))
 
 (defmethod get-description((item item))
   (formatted "~a~&Weight: ~a~&Condition: ~a%~&" (-> item description) (-> item weight) (* 100(-> item condition))))
@@ -407,7 +412,7 @@
 (defmethod free-item((stack item-stack))
   (progn
     (decf (-> stack count))
-    (-> stack item)))
+    (copy-item (-> stack item))))
 
 (defun stack-type(stack creature)
   (type-of (-> stack item)))
@@ -492,7 +497,8 @@
   (when (and level:*actor*
 	     (< (perception:way-distance pos (way-to level:*actor*) :center (get-pos level:*actor*)) (sound-intensity sound))
 	     (or (not if-not-see) (not (seesp level:*actor* pos))))
-    (ui:add-message (get-message-buffer level:*actor*) (sound-message sound))))
+    (ui:add-message (get-message-buffer level:*actor*) (sound-message sound))
+    (memory:add-sound (get-memory level:*actor*) (sound-message sound) pos)))
 
 (defgeneric simulate-noise(entity sound))
 

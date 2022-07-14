@@ -1,6 +1,5 @@
 (in-package :perception)
 
-
 ;;Actor vision
 (defstruct vision
   (plan (make-map-array :element-type 'bit) :type (map-array bit))
@@ -11,6 +10,11 @@
 
 (defun vision-visiblep(vision p)
   (= (pref (vision-visible vision) p) 1))
+
+(defun make-visible-setter-debug(fov center)
+  (declare (ignore center))
+  (lambda (pos)
+    (setf (pref (vision-visible fov) pos) 1)))
 
 (defun make-visible-setter(fov center)
   (with-accessors ((visible vision-visible)
@@ -83,12 +87,17 @@
 
 ;;Fov info
 
-(defgeneric update-fov(fov pos))
+(defstruct (mark (:constructor make-mark(gramma text)))
+  (gramma nil :type ui:gramma)
+  (text "" :type string))
+
+(defgeneric get-fov(obj))
 
 (defclass fov-info()
   ((fov :type vision :initarg :fov :reader get-fov)
    (center :type pos :reader get-center :initarg :center)
-   (entity-positions :initform nil :type list :reader fov-entity-positions :initarg :visible-entities)))
+   (marks :initarg :marks :reader fov-marks)
+   (entity-positions :initform nil :type list :reader fov-entity-positions :initarg :entity-positions)))
 
 (defmethod visiblep((info fov-info) pos)
   (= (pref (-> info fov visible) pos) 1))
@@ -96,21 +105,21 @@
 (defmethod seenp((info fov-info) pos)
   (= (pref (-> info fov plan) pos) 1))
 
-(defun visible-creatures(fov)
-  (remove nil (apply #'append (mapcar (lambda (p) (level:get-entities p 'entity:creature)) (fov-entity-positions fov)))))
+(defun visible-entities(fov)
+  (mappend #'cdr (fov-entity-positions fov)))
 
-(defmethod update-fov((fov vision) pos)
+(defun fov-pos-entities(fov pos)
+  (cdr (assoc pos (-> fov entity-positions) :test #'equalp)))
+
+(defun update-vision(fov pos)
   (fov-shadowcast fov pos)
-  (awith (make-instance 'fov-info :fov fov :center pos)
-	 (level:do-entities (p entities it)
-	   (when (/= (pref (vision-visible fov) p) 0)
-	     (push p (-> it entity-positions))))))
-
+  fov)				      
+				      
 (defun get-gramma(fov-info pos)
   (declare (type fov-info fov-info))
   (cond ((visiblep fov-info pos)
 	 (map:pos-gramma pos))
-	(t get-plan-gramma)))
+	(t (get-plan-gramma fov-info pos))))
 
 (defun get-plan-gramma(fov-info pos)
   (if (seenp fov-info pos)
@@ -118,6 +127,7 @@
       (ui:static-gramma #\Space (ui:color :black))))
 
 (defun fov-pos-description(fov-info pos)
-  (cond ((not (visiblep fov-info pos)) "I have no vision here.")
-	((find pos (fov-entity-positions fov-info) :test #'equalp) (formatted "~{~a ~}" (mapcar #'entity:get-name (level:get-entities pos))))
-	(t (map:pos-name pos))))
+  (acond
+    ((not (visiblep fov-info pos)) "I have no vision here.")
+    ((fov-pos-entities fov-info pos) (formatted "~{~a~} on ~a" (mapcar #'entity:get-name it) (map:pos-name pos)))
+    (t (map:pos-name pos))))

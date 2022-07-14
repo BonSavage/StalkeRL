@@ -7,15 +7,15 @@
   (alexandria:with-gensyms (mv)
     `(flet ((,mv (,x ,y) ,@forms))
        (controller
-	(#\9 (,mv 1 -1))
-	(#\8 (,mv 0 -1))
-	(#\7 (,mv -1 -1))
-	(#\6 (,mv 1 0))
-	(#\5 (,mv 0 0))
-	(#\4 (,mv -1 0))
-	(#\3 (,mv 1 1))
-	(#\2 (,mv 0 1))
-	(#\1 (,mv -1 1))
+	((or #\9 #\u) (,mv 1 -1))
+	((or #\8 #\k) (,mv 0 -1))
+	((or #\7 #\y) (,mv -1 -1))
+	((or #\6 #\l) (,mv 1 0))
+	((or #\5)     (,mv 0 0))
+	((or #\4 #\h) (,mv -1 0))
+	((or #\3 #\n) (,mv 1 1))
+	((or #\2 #\j) (,mv 0 1))
+	((or #\1 #\b) (,mv -1 1))
 	,@key2expr))))
 
 (defun actor-controller(actor fov-info)
@@ -47,7 +47,8 @@
 	 (fire-modes (entity:get-fire-modes weapon)))
     (dir-controller ((x y) (move-focus fov (make-pos x y)))
       (#\0 (progn
-	     (ui:add-note (entity:get-message-buffer actor) (formatted "Fire mode: ~a" (or (second fire-modes) (first fire-modes))))
+	     (ui:add-note (entity:get-message-buffer actor)
+			  (str (formatted "Fire mode: ~a" (or (second fire-modes) (first fire-modes)))))
 	     (psetf fire-modes (cdr fire-modes))))
       (#\f (event:perform-shot! actor (get-map-focus fov) (first fire-modes)))
       (#\Tab (next-target fov))
@@ -122,10 +123,18 @@
   (call-handler menu))
 
 (defun actor-stats(actor)
-  (text (list (str (formatted "HP: ~4@a/~5a" (entity:get-hp actor) (entity:get-max-hp actor)) (color :crimson))
-	      (str " Armor: " (color :blue)) (str (formatted "~5a" 0))
-	      (str "Speed: ") (str (formatted "~5a" (entity:get-speed actor)))
-	      (str "Item: ") (aif (entity:get-weapon actor) (str (entity:get-full-name it)) (str "<none>")))))
+  (ui:plain
+   (list* (str (formatted " HP: ~3@a/~3a" (entity:get-hp actor) (entity:get-max-hp actor)) (color :crimson))
+	  (str " Armor:" (color :blue)) (str (formatted "~3a" (entity:get-protection-type actor 'entity:mechanic)))
+	  (str (formatted "Speed:~3a" (entity:get-speed actor)))
+	  (str "Shock:") (str (formatted "~@a" (entity:get-shock actor))
+			      (ui:color :purple))
+	  (str "/")
+	  (str (formatted "~a" (entity:get-insanity actor)))
+	  (str "Item:") (aif (entity:get-weapon actor)
+			     (list (entity:get-gramma it)
+				   (str (entity:get-full-name it)))
+			     (list (str "<none>"))))))
 
 (define-panel game-panel(actor controller fov-info message-source)
   :named
@@ -198,10 +207,51 @@
   ((gear (alphabetic-menu slots equipment-slot
 			  :action (lambda (index) (event:use-slot! actor (elt slots index))))))
   :drawable
-  (field (rect (20 5) (60 16)) (horizontal-split (framed (cell-color :default) (view-instance gear))
+  (field (rect (10 5) (70 20)) (horizontal-split (framed (cell-color :default) (view-instance gear))
 						 (framed (cell-color :default) (page (selected-description gear (lambda (slot) (item-description (entity:slot-stack slot))))))))
   :controller
   (handle gear))
+
+(defun gear-text()
+  (list
+   (section
+    (str "Weapon" (color :dark-gray))
+    (list
+     (cons "Used:" 'entity:used)
+     (cons "Prepared:" 'entity:prepared)))
+   (section
+    (str "Armor" (color :dark-gray))
+    (list
+     (cons "Helmet:" 'entity:helmet)
+     (cons "Body armor:" 'entity:armor)))
+   (section
+    (str "Accessories" (color :dark-gray))
+    nil)))
+
+(defun gear-view(gear)
+  (ui:elem-view
+   (lambda (pair length) (list* (str (car pair)) (aif (slot-value gear (cdr pair))
+						      (list (entity:get-gramma it) (str (entity:get-name it)))
+						      (list (str "<none>")))))
+   (lambda (str) (list* (first str) (if (third str)
+					(list (second str) (string-select (third str)))
+					(list (string-select (second str))))))))
+
+(define-panel actor-equipment(actor &aux (gear (entity:get-gear actor)))
+  :named
+  ((gear-menu (complex-menu (gear-text)
+			    (gear-view gear)
+			    :action (lambda (index content) (event:use-slot! actor (cdr (elt content index)))))))
+  :drawable
+  (field (rect (10 5) (70 20)) (horizontal-split (framed (cell-color :default) (view-instance gear-menu))
+						 (framed (cell-color :default)
+							 (page (selected-description gear-menu
+										     (lambda (pair)
+										       (aif (slot-value gear (cdr pair))
+											    (item-description it)
+											    (line (str "<none>")))))))))
+  :controller
+  (handle gear-menu))
 
 (define-panel frame-test()
   :drawable

@@ -17,6 +17,7 @@
 	       (:file "entity-defs" :depends-on ("entity" "coordinates" "perception" "ui"))
 	       (:file "perception" :depends-on ("coordinates" "level" "ui"))
 	       (:file "event" :depends-on ("entity-defs" "panels" "coordinates"))
+	       (:file "memory" :depends-on ("event" "entity-defs" "perception"))
 	       (:file "control" :depends-on ("event"))
 	       (:file "level" :depends-on ("map" "entity"))
 	       (:file "generator" :depends-on ("level" "terrain" "random"))))

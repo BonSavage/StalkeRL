@@ -14,10 +14,12 @@
     (:red (128 0 0))
     (:brown (128 24 24))
     (:dark-brown (64 24 24))
+    (:yellow (128 96 96))
     (:silver (192 192 192))
     (:green (0 128 0))
     (:olivine (0 96 48))
     (:blue (0 0 128))
+    (:purple (32 0 128))
     (:orange (128 64 64)))
 
   (def-symbol-map cell-color-map
@@ -26,6 +28,7 @@
     (:selected (:black :white))
     (:hp (:crimson :black))
     (:armor (:blue :black))
+    (:sound-mark (:yellow :black))
     (:selected-alpha (:white :black))
     (:limit (:black :gray))))
 
@@ -342,17 +345,24 @@
   (with-slots (index sequence size) scrollable
     (<= (- (length sequence) index) (y size))))
 
+(defun scroll-to(scrollable position)
+  (psetf (-> scrollable index) (grant-bounds position 0 (1- (length (-> scrollable sequence))))))
+
 (defun page-index(scrollable)
   "Number of the current page and dependent index of the selected line"
   (with-slots (index size) scrollable
     (floor index (y size))))
+
+(defun page-length(scrollable)
+  "Constant in fact"
+  (-> scrollable size y))
 
 (defun page-bounds(scrollable)
   "Start index and end index of the current page"
   (awith (page-index scrollable)
 	 (values it (grant-bounds (+ it (y (-> scrollable size))) it (length (-> scrollable sequence))))))
 
-(defun scrollable-page(scrollable &key  aligned)
+(defun scrollable-page(scrollable &key aligned)
   "Current page of the scrollable"
   (with-slots (sequence index size) scrollable
     (multiple-value-call #'scrollable-subseq scrollable
@@ -379,6 +389,36 @@
   (select-line (page-alphabetic (menu-page scrollable :convert convert)) (value-second (page-index scrollable))
 	       :convert (lambda (line) (cons (alpha-select (first line)) (rest line)))))
 
+(defstruct menu-section
+  (name nil :type gui-string)
+  (pos 0 :type fixnum))
+
+(defun label-sections(gstrs sections)
+  (pm/amatch (gstrs 0 sections)
+	     self(nil _ _) nil
+	     self(lst _ nil) lst 
+	     self((hd . tl) i (sec . rest)) (if (= i (menu-section-pos sec))
+						(cons (menu-section-name sec) (self (cons hd tl) (1+ i) rest))
+						(cons hd (self tl (1+ i) (cons sec rest))))))
+
+(defun calculate-offset(scrollable sections)
+  (pm/amatch (sections)
+	     self(nil) 0
+	     self((hd . tl)) (if (<= (menu-section-pos hd)
+				     (scrollable-index scrollable))
+				 (1+ (self tl))
+				 0)))
+
+(defun complex-page(scrollable &key sections (convert #'gstr-select))
+  (let-be [selected (select-line (-> scrollable sequence)
+				 (-> scrollable index)
+				 :convert convert)
+	   labeled (label-sections selected sections)
+	   offset (calculate-offset scrollable sections)
+	   converted (make-scrollable :sequence labeled :index (+ offset (scrollable-index scrollable)) :size (scrollable-size scrollable))]
+    (scrollable-page converted :aligned t)))
+
+
 ;;Dynamic
 
 (defmacro control(controller &optional else)
@@ -398,21 +438,38 @@
 (defmacro controller-let(&rest key2expr)
   `(control (controller ,@key2expr)))
 
-(defmacro controller-body(event &rest key2expr)
+(defun expr-event(expr)
+  (predicate-case expr
+		  (characterp (api:key-to-event (char-code expr)))
+		  (^(eq 't _) 't)
+		  (listp (if (eq (first expr) 'or)
+			     (mapcar #'expr-event (rest expr))))
+		  (symbolp (case expr
+			     (up 82)
+			     (down 81)
+			     (right 79)
+			     (left 80)
+			     (t (api:key-to-event
+				 (char-code (name-char expr))))))))
+
+(defun build-controller-case(cs event)
+  (awith (car cs)
+	 (if (and (listp it) (eq (first it) 'and))
+	     (destructuring-bind (op first . rest) it
+	       (if rest
+		   `(,event
+		     (handle-input
+		      ((and ,@rest)
+		       (t nil))))
+		   (build-controller-case (cons first (cdr cs)))))
+	     (cons
+	      (expr-event it)
+	      (cdr cs)))))
+
+(defmacro controller-body(event &body key2expr)
   `(case ,event
      ,@(mapcar
-	(lambda (cs)
-	  (cons (awith (car cs)
-		  (predicate-case it
-		    (characterp (api:key-to-event (char-code it)))
-		    (^(eq 't _) 't)
-		    (symbolp (case it
-			       (up 82)
-			       (down 81)
-			       (right 79)
-			       (left 80)
-			       (t (name-char it))))))
-		(cdr cs)))
+        (alexandria:rcurry #'build-controller-case event)
 	key2expr)))
 
 ;;;Primitive drawers (must be called indirectly through closures)

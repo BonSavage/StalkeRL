@@ -35,16 +35,19 @@
 (defun clear-level()
   (clrhash *entities*))
 
+(defun pos-entities-alist()
+  (iter
+    (for (k v) in-hashtable *entities*)
+    (collect (cons k v))))
+
 ;;;Map interface
 
-(defun get-gramma(fov-info pos) ;Creature | Item & Trap | Item | Trap | Terrain
-  (acond
-   ((get-entities pos 'entity:creature)
-    (entity:get-gramma (first it)))
-   ((get-entities pos '(or entity:item-stack entity:corpse))
-    (if (get-entities pos 'entity:trap)
-        (ui:augment-gramma (entity:get-gramma (first it)) :background (ui:color :crimson))
-	(entity:get-gramma (first it))))
-   ((get-entities pos 'entity:trap)
-    (entity:get-gramma (first it)))
-   (t (perception:get-gramma fov-info pos))))
+(defun get-entities-gramma(entities)
+  (localf f(type) (find-if (of-type type) entities)
+    (acond
+      ((f 'entity:creature) (entity:get-gramma it))
+      ((f '(or entity:item-stack entity:corpse))
+       (if (f 'entity:trap)
+	   (ui:augment-gramma (entity:get-gramma it) :background (ui:color :orange))
+	   (entity:get-gramma it)))
+      ((f 'entity:trap) (entity:get-gramma it)))))
