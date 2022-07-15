@@ -224,9 +224,10 @@
 
 ;;Algorithms
 
+
 (defun shadowcast(setter center &key (bound (lambda (i j) i)) (bound-test #'in-map-bound-p) (ctg-sequence '((-1 1) (-1 1) (-1 1) (-1 1))))
   "Classic shadowcast implementation"
-  (iter
+  (iter 
     (for map-pos in (combine (lambda (s n) (lambda (p) (coordinates:add center (funcall s (funcall n p)))))
 			     (list #'identity #'coordinates:transpose)
 			     (list #'identity #'coordinates:negate)))
@@ -235,8 +236,8 @@
 	       (bounded-i (i) `(funcall bound ,i j))
 	       (build-pos (x &optional (y 'j)) `(grant-on-map (map-pos (make-pos (bounded-i ,x) ,y)))))
       (alet [start-ctg init-start-ctg
-		       end-ctg init-end-ctg
-		       j 1]
+	     end-ctg init-end-ctg
+	     j 1]
 	(let*((start-i (bounded-i (ceiling (* start-ctg j))))
 	      (end-i (bounded-i (floor (* end-ctg j))))
 	      (blockedp (solidp (grant-on-map (map-pos (make-pos start-i j))))))
@@ -253,10 +254,10 @@
 		  (funcall setter it)
 		  (if (solidp it)
 		      (unless blockedp
-			(self start-ctg (/ (- i .5) j) (1+ j))
+			(self start-ctg (- (/ (- i .5) j) short-float-epsilon) (1+ j))
 			(psetf blockedp t))
 		      (when blockedp ;And not obstaclep
-			(psetf start-ctg (/ (- i .5) j)
+			(psetf start-ctg (/ (+ (- i .5) short-float-epsilon) j)
 			       blockedp nil)))))
 	      (finally (unless blockedp (self start-ctg end-ctg (1+ j)))))))))))
 

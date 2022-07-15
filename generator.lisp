@@ -111,16 +111,16 @@
 						  0
 						  (max 1 length))
 	      self((nil nil) length) (nhalf length)
-	      self((first nil) length) (self first (round-up (/ length 2)))
+	      self((first nil) length) (self first (round-down (/ length 2)))
 	      self((nil second) length) (+ (round-up (/ length 2)) (self second (round-down (/ length 2)))))))
 
 (defun make-tunnel(rect doors)
-  (let-be [length (x (size rect))
-	   height (y (size rect))
-	   nx (+ (x (start rect)) (key-doorpos (rose-north doors) length))
-	   sx (+ (x (start rect)) (key-doorpos (rose-south doors) length))
-	   wy (+ (y (start rect)) (key-doorpos (rose-west doors) height))
-	   ey (+ (y (start rect)) (key-doorpos (rose-east doors) height))
+  (let-be [length (1- (x (size rect)))
+	   height (1- (y (size rect)))
+	   nx (+ 1 (x (start rect)) (key-doorpos (rose-north doors) length))
+	   sx (+ 1 (x (start rect)) (key-doorpos (rose-south doors) length))
+	   wy (+ 1 (y (start rect)) (key-doorpos (rose-west doors) height))
+	   ey (+ 1 (y (start rect)) (key-doorpos (rose-east doors) height))
 	   center1 (make-pos (min nx sx) (min wy ey))
 	   center2 (make-pos (max nx sx) (max wy ey))]
     (remove nil (list
@@ -155,8 +155,6 @@
 	   (inferior-end (add (end rect)
 			      (make-pos (if (rose-east opens) 1 0)
 					(if (rose-south opens) 1 0)))))
-      (symbol-macrolet ((hlength (+ (x (start rect)) (round-down (half length)) (if (rnd:bernoulli) 1 -1)))
-			(hheight (+ (y (start rect)) (round-down (half height)) (if (rnd:bernoulli) 1 -1))))
 	(make-room-data :start inferior-start :size (distance-point inferior-end inferior-start)
 			:doors (mapcar (lambda (door openedp pos) (when (and door (not openedp))
 								    pos))
@@ -168,7 +166,7 @@
 							  :west (make-pos (1- (x inferior-start))
 									  (+ (y (start rect)) (key-doorpos (rose-west doors) (1- height))))
 							  :east (make-pos (1+ (x inferior-end))
-									  (+ (y (start rect)) (key-doorpos (rose-east doors) (1- height)))))))))))
+									  (+ (y (start rect)) (key-doorpos (rose-east doors) (1- height))))))))))
 
 ;;Room list
 (defun make-room-list(rect &optional (deepness 0) (keys (make-compass-rose :north (make-door 2) :south (make-door 2))) doors)

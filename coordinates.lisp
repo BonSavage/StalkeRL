@@ -167,12 +167,12 @@
 (defun trace-line(predicate line)
   (pm/amatch (line)
 	     self(nil) t
-	     self((hd . tl)) (and (some predicate hd) (self (force tl)))))
+	     self((hd . tl)) (and (every predicate hd) (self (force tl)))))
 
 (defun cast-ray(stop-predicate line)
   (pm/amatch (line)
 	     self(nil) nil
-	     self((hd . tl)) (cons-stream hd (if (every stop-predicate hd)
+	     self((hd . tl)) (cons-stream hd (if (some stop-predicate hd)
 						 nil
 						 (self (force tl))))))
 
